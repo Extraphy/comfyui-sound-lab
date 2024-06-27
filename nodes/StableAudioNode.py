@@ -13,21 +13,16 @@ from .stable_audio_tools.inference.generation import generate_diffusion_cond
 
 import folder_paths
 
-# 获取当前文件的绝对路径
 current_file_path = os.path.abspath(__file__)
 
-# 获取当前文件的目录
 current_directory = os.path.dirname(current_file_path)
 
-# 添加当前插件的nodes路径，使ChatTTS可以被导入使用
 sys.path.append(current_directory)
 
 
 from .utils import get_new_counter
 
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
-
-# sample_size/sample_rate = 47s
 
 def get_model_config():
     return {
@@ -166,7 +161,6 @@ def get_model_filenames(root):
             model_filenames.append(filename)
     return model_filenames[0]
 
-# 加载模型
 def load_model(device):
     model_path=""
     try:
@@ -222,8 +216,8 @@ def generate(model,prompt,seconds,seed,steps,cfg_scale,sample_size, sigma_min, s
 class StableAudioNode:
     def __init__(self):
         self.initialized_model = None
-        self.sample_rate=None
-        self.sample_size=None
+        self.sample_rate = None
+        self.sample_size = None
 
     @classmethod
     def INPUT_TYPES(s):
@@ -235,62 +229,56 @@ class StableAudioNode:
                             "default": '128 BPM tech house drum loop',
                             "dynamicPrompts": True
                           }),
-                "seconds":("FLOAT", {"default": 47, "min": 1, "max": 10000,"step": 0.1}),
+                "seconds": ("FLOAT", {"default": 47, "min": 1, "max": 10000, "step": 0.1}),
                 "steps": ("INT", {"default": 16, "min": 1, "max": 10000}),
-
-                "seed":  ("INT", {"default": 0, "min": 0, "max": np.iinfo(np.int32).max}), 
-
+                "seed": ("INT", {"default": 0, "min": 0, "max": np.iinfo(np.int32).max}), 
                 "cfg_scale": ("FLOAT", {"default": 7.0, "min": 0.0, "max": 100.0, "step": 0.1}), 
                 "sigma_min": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 1000.0, "step": 0.01}),
                 "sigma_max": ("FLOAT", {"default": 200.0, "min": 0.0, "max": 1000.0, "step": 0.01}),
-                # "sampler_type": ("STRING", {"default": "dpmpp-3m-sde"}),
-                
-                "device":(["auto","cpu"],),
+                "device": (["auto", "cpu"],),
             }
         }
     
-    RETURN_TYPES = ("AUDIO",)
-    RETURN_NAMES = ("audio",)
+    RETURN_TYPES = ("AUDIO", "STRING")
+    RETURN_NAMES = ("audio", "audio_path")
 
     FUNCTION = "run"
     INPUT_IS_LIST = False
-    OUTPUT_IS_LIST = (False,)
+    OUTPUT_IS_LIST = (False, False)
 
     CATEGORY = "♾️Sound Lab"
 
-    def run(self, prompt,seconds,steps,seed, cfg_scale,  sigma_min, sigma_max, device):
-
-        if device=='auto':
-            device="cuda" if torch.cuda.is_available() else "cpu"
+    def run(self, prompt, seconds, steps, seed, cfg_scale, sigma_min, sigma_max, device):
+        if device == 'auto':
+            device = "cuda" if torch.cuda.is_available() else "cpu"
 
         if self.initialized_model:
-            self.initialized_model=self.initialized_model.to(device)
+            self.initialized_model = self.initialized_model.to(device)
         else:
-            self.initialized_model,self.sample_rate,self.sample_size=load_model(device)
+            self.initialized_model, self.sample_rate, self.sample_size = load_model(device)
 
-        # 根据时长，计算size
-        self.sample_size=int(self.sample_rate*seconds)
+        self.sample_size = int(self.sample_rate * seconds)
         
-        output=generate(self.initialized_model,prompt,seconds,seed,steps,cfg_scale,self.sample_size, sigma_min, sigma_max, "dpmpp-3m-sde",device)
+        output = generate(self.initialized_model, prompt, seconds, seed, steps, cfg_scale, 
+                          self.sample_size, sigma_min, sigma_max, "dpmpp-3m-sde", device)
 
         self.initialized_model.to(torch.device('cpu'))
 
         output_dir = folder_paths.get_output_directory()
     
-        audio_file="stabe_audio"
-        counter=get_new_counter(output_dir,audio_file)
-        # print('#audio_path',folder_paths, )
-        # 添加文件名后缀
+        audio_file = "stable_audio"
+        counter = get_new_counter(output_dir, audio_file)
         audio_file = f"{audio_file}_{counter:05}.wav"
         
-        audio_path=os.path.join(output_dir, audio_file)
+        audio_path = os.path.join(output_dir, audio_file)
 
         torchaudio.save(audio_path, output, self.sample_rate)
         
-        return ({
-                "filename": audio_file,
-                "subfolder": "",
-                "type": "output",
-                "prompt":prompt
-                },)
-    
+        audio_output = {
+            "filename": audio_file,
+            "subfolder": "",
+            "type": "output",
+            "prompt": prompt
+        }
+        
+        return (audio_output, audio_path)
